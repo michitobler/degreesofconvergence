@@ -1,0 +1,1285 @@
+---
+title: "Predictors of Convergence"
+output: html_notebook
+---
+
+# 1. Dependencies
+
+## 1.1. Loading required packages
+
+```{r include=FALSE}
+library(limma)
+library(DESeq2)
+library(edgeR)
+library(splines)
+library(RColorBrewer)
+library(ggplot2)
+library(data.table)
+library(evemodel)
+library(ape)
+library(ggtree)
+library(tidyr)
+library(pbapply)
+library(stringr)
+library(dplyr)
+library(plyr)
+library(spaa)
+library(ggrepel)
+library(vegan)
+library(rgdal)
+library(raster) 
+library(rgeos)  
+library(dismo)
+library(sp)
+library(MuMIn)
+library(fields)
+library(ppcor)
+library(ggpubr)
+library(ncf)
+library(cultevo)
+library(ecodist)
+library(WorldClimTiles)
+```
+
+## 1.2. Custom functions
+
+```{r include=FALSE}
+FDRcalc <- function(x) {
+  p <- pchisq(x, df=1, lower.tail=FALSE)
+  rank <- rank(p)
+  FDRp <- p*5000/rank
+  FDR <- ifelse(FDRp > 1, 1, FDRp)
+  return(FDR)
+}
+```
+
+# 2. Importing data
+
+## 2.1. FPKM matrix
+
+```{r include=FALSE}
+FPKM <- read.csv("master_fpkm.csv", row.names = 1)
+```
+
+### 2.1.1. Subsetting and transforming FPKM matrix
+
+```{r include=FALSE}
+#Remove genes that are not expressed in all individuals
+keep <- rowSums(cpm(FPKM)>0) >= 118
+FPKM.filtered <- FPKM[keep,]
+dim(FPKM.filtered)
+
+#Selecting top 5000 expressed genes
+FPKM.final <- FPKM.filtered[1:5000,]
+
+#Removing incomplete cases
+FPKM.final[complete.cases(FPKM.final), ]
+```
+
+## 2.2. Phylogenetic tree
+
+```{r include=FALSE}
+tree<-read.tree("recodedTreeNamed.tre")
+```
+
+# 3. Subsetting input files
+
+Subsetting FPKM matrix and tree for pairwise comparisons between different sulfidic lineages. Sorry this is all hard coded...
+
+## 3.1. FPKM Matrices
+
+```{r include=FALSE}
+#	11	PmexPuyS	PmexTacS
+m_11 <- c("PmexPuyS","PmexTacS")
+FPKM_11 <- as.matrix(subset(FPKM.final, select=-c(PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	12	PmexPuyS	PmexPichS
+m_12 <- c("PmexPuyS","PmexPichS")
+FPKM_12 <- as.matrix(subset(FPKM.final, select=-c(PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	13	PmexPuyS	PlatS
+m_13 <- c("PmexPuyS","PlatS")
+FPKM_13 <- as.matrix(subset(FPKM.final, select=-c(PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	14	PmexPuyS	LsulS	20	16
+m_14 <- c("PmexPuyS","LsulS")
+FPKM_14 <- as.matrix(subset(FPKM.final, select=-c(PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	15	PmexPuyS	GsexS
+m_15 <- c("PmexPuyS","GsexS")
+FPKM_15 <- as.matrix(subset(FPKM.final, select=-c(PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	16	PmexPuyS	GeurS
+m_16 <- c("PmexPuyS","GeurS")
+FPKM_16 <- as.matrix(subset(FPKM.final, select=-c(PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	17	PmexPuyS	GholS
+m_17 <- c("PmexPuyS","GholS")
+FPKM_17 <- as.matrix(subset(FPKM.final, select=-c(PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	18	PmexPuyS	PbimS
+m_18 <- c("PmexPuyS","PbimS")
+FPKM_18 <- as.matrix(subset(FPKM.final, select=-c(PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	19	PmexPuyS	XhelS
+m_19 <- c("PmexPuyS","XhelS")
+FPKM_19 <- as.matrix(subset(FPKM.final, select=-c(PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6
+                                          )))
+
+#	20	PmexTacS	PmexPichS
+m_20 <- c("PmexTacS","PmexPichS")
+FPKM_20 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	21	PmexTacS	PlatS
+m_21 <- c("PmexTacS","PlatS")
+FPKM_21 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	22	PmexTacS	LsulS
+m_22 <- c("PmexTacS","LsulS")
+FPKM_22 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	23	PmexTacS	GsexS
+m_23 <- c("PmexTacS","GsexS")
+FPKM_23 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	24	PmexTacS	GeurS
+m_24 <- c("PmexTacS","GeurS")
+FPKM_24 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	25	PmexTacS	GholS
+m_25 <- c("PmexTacS","GholS")
+FPKM_25 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	26	PmexTacS	PbimS
+m_26 <- c("PmexTacS","PbimS")
+FPKM_26 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	27	PmexTacS	XhelS
+m_27 <- c("PmexTacS","XhelS")
+FPKM_27 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6
+                                          )))
+
+#	28	PmexPichS	PlatS
+m_28 <- c("PmexPichS","PlatS")
+FPKM_28 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	29	PmexPichS	LsulS
+m_29 <- c("PmexPichS","LsulS")
+FPKM_29 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	30	PmexPichS	GsexS
+m_30 <- c("PmexPichS","GsexS")
+FPKM_30 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	31	PmexPichS	GeurS
+m_31 <- c("PmexPichS","GeurS")
+FPKM_31 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	32	PmexPichS	GholS
+m_32 <- c("PmexPichS","GholS")
+FPKM_32 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	33	PmexPichS	PbimS
+m_33 <- c("PmexPichS","PbimS")
+FPKM_33 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	34	PmexPichS	XhelS
+m_34 <- c("PmexPichS","XhelS")
+FPKM_34 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6
+                                          )))
+
+#	35	PlatS	LsulS
+m_35 <- c("PlatS","LsulS")
+FPKM_35 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	36	PlatS	GsexS
+m_36 <- c("PlatS","GsexS")
+FPKM_36 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	37	PlatS	GeurS
+m_37 <- c("PlatS","GeurS")
+FPKM_37 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	38	PlatS	GholS
+m_38 <- c("PlatS","GholS")
+FPKM_38 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	39	PlatS	PbimS
+m_39 <- c("PlatS","PbimS")
+FPKM_39 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	40	PlatS	XhelS
+m_40 <- c("PlatS","XhelS")
+FPKM_40 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6
+                                          )))
+
+#	41	LsulS	GsexS
+m_41 <- c("LsulS","GsexS")
+FPKM_41 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	42	LsulS	GeurS
+m_42 <- c("LsulS","GeurS")
+FPKM_42 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	43	LsulS	GholS
+m_43 <- c("LsulS","GholS")
+FPKM_43 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	44	LsulS	PbimS
+m_44 <- c("LsulS","PbimS")
+FPKM_44 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	45	LsulS	XhelS
+m_45 <- c("LsulS","XhelS")
+FPKM_45 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6
+                                          )))
+
+#	46	GsexS	GeurS
+m_46 <- c("GsexS","GeurS")
+FPKM_46 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	47	GsexS	GholS
+m_47 <- c("GsexS","GholS")
+FPKM_47 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	48	GsexS	PbimS
+m_48 <- c("GsexS","PbimS")
+FPKM_48 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	49	GsexS	XhelS
+m_49 <- c("GsexS","XhelS")
+FPKM_49 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6
+                                          )))
+
+#	50	GeurS	GholS
+m_50 <- c("GeurS","GholS")
+FPKM_50 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	51	GeurS	PbimS
+m_51 <- c("GeurS","PbimS")
+FPKM_51 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+#	52	GeurS	XhelS
+m_52 <- c("GeurS","XhelS")
+FPKM_52 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6
+                                          )))
+
+#	53	GholS	PbimS
+m_53 <- c("GholS","PbimS")
+FPKM_53 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          XhelS_1, XhelS_2, XhelS_3, XhelS_4, XhelS_5, XhelS_6
+                                          )))
+
+#	54	GholS	XhelS
+m_54 <- c("GholS","XhelS")
+FPKM_54 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          PbimS_1, PbimS_2, PbimS_3, PbimS_4, PbimS_5, PbimS_6
+                                          )))
+
+#	55	PbimS	XhelS
+m_55 <- c("PbimS","XhelS")
+FPKM_55 <- as.matrix(subset(FPKM.final, select=-c(PmexPuyS_1, PmexPuyS_2, PmexPuyS_3, PmexPuyS_4, PmexPuyS_5,
+                                          PmexTacS_2, PmexTacS_3, PmexTacS_4, PmexTacS_5, PmexTacS_6,
+                                          PmexPichS_1, PmexPichS_2,PmexPichS_3, PmexPichS_4, PmexPichS_5, PmexPichS_6,
+                                          PlatS_1, PlatS_2, PlatS_3, PlatS_4, PlatS_5, PlatS_6,
+                                          LsulS_1, LsulS_2, LsulS_3, LsulS_4, LsulS_5, LsulS_6,
+                                          GsexS_1, GsexS_2, GsexS_3, GsexS_4, GsexS_5, GsexS_6,
+                                          GeurS_1, GeurS_2, GeurS_3, GeurS_4, GeurS_5, GeurS_6,
+                                          GholS_1, GholS_2, GholS_3, GholS_4, GholS_5, GholS_6
+                                          )))
+```
+
+## 3.2. Subsetting Phylogenetic Trees
+
+```{r include=FALSE}
+#	11	PmexPuyS	PmexTacS
+subtree.11 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexPichS", "PlatS", "LsulS"))
+
+#	12	PmexPuyS	PmexPichS
+subtree.12 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexTacS", "PlatS", "LsulS"))
+
+#	13	PmexPuyS	PlatS
+subtree.13 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexTacS", "PmexPichS", "LsulS"))
+
+#	14	PmexPuyS	LsulS	20	16
+subtree.14 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexTacS", "PmexPichS", "PlatS"))
+
+#	15	PmexPuyS	GsexS
+subtree.15 <- drop.tip(tree, c("GholS", "GeurS", "PbimS", "XhelS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	16	PmexPuyS	GeurS
+subtree.16 <- drop.tip(tree, c("GholS", "GsexS", "PbimS", "XhelS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	17	PmexPuyS	GholS
+subtree.17 <- drop.tip(tree, c("GeurS", "GsexS", "PbimS", "XhelS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	18	PmexPuyS	PbimS
+subtree.18 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "XhelS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	19	PmexPuyS	XhelS
+subtree.19 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	20	PmexTacS	PmexPichS
+subtree.20 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PlatS", "LsulS"))
+
+#	21	PmexTacS	PlatS
+subtree.21 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexPichS", "LsulS"))
+
+#	22	PmexTacS	LsulS
+subtree.22 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexPichS", "PlatS"))
+
+#	23	PmexTacS	GsexS
+subtree.23 <- drop.tip(tree, c("GholS", "GeurS", "PbimS", "XhelS", "PmexPuyS", "PmexPichS", "PlatS", "LsulS"))
+
+#	24	PmexTacS	GeurS
+subtree.24 <- drop.tip(tree, c("GholS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexPichS", "PlatS", "LsulS"))
+
+#	25	PmexTacS	GholS
+subtree.25 <- drop.tip(tree, c("GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexPichS", "PlatS", "LsulS"))
+
+#	26	PmexTacS	PbimS
+subtree.26 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "XhelS", "PmexPuyS", "PmexPichS", "PlatS", "LsulS"))
+
+#	27	PmexTacS	XhelS
+subtree.27 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "PmexPuyS", "PmexPichS", "PlatS", "LsulS"))
+
+#	28	PmexPichS	PlatS
+subtree.28 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "LsulS"))
+
+#	29	PmexPichS	LsulS
+subtree.29 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PlatS"))
+
+#	30	PmexPichS	GsexS
+subtree.30 <- drop.tip(tree, c("GholS", "GeurS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PlatS", "LsulS"))
+
+#	31	PmexPichS	GeurS
+subtree.31 <- drop.tip(tree, c("GholS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PlatS", "LsulS"))
+
+#	32	PmexPichS	GholS
+subtree.32 <- drop.tip(tree, c("GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PlatS", "LsulS"))
+
+#	33	PmexPichS	PbimS
+subtree.33 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "XhelS", "PmexPuyS", "PmexTacS", "PlatS", "LsulS"))
+
+#	34	PmexPichS	XhelS
+subtree.34 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "PmexPuyS", "PmexTacS", "PlatS", "LsulS"))
+
+#	35	PlatS	LsulS
+subtree.35 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS"))
+
+#	36	PlatS	GsexS
+subtree.36 <- drop.tip(tree, c("GholS", "GeurS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "LsulS"))
+
+#	37	PlatS	GeurS
+subtree.37 <- drop.tip(tree, c("GholS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "LsulS"))
+
+#	38	PlatS	GholS
+subtree.38 <- drop.tip(tree, c("GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "LsulS"))
+
+#	39	PlatS	PbimS
+subtree.39 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "LsulS"))
+
+#	40	PlatS	XhelS
+subtree.40 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "PmexPuyS", "PmexTacS", "PmexPichS", "LsulS"))
+
+#	41	LsulS	GsexS
+subtree.41 <- drop.tip(tree, c("GholS", "GeurS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS"))
+
+#	42	LsulS	GeurS
+subtree.42 <- drop.tip(tree, c("GholS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS"))
+
+#	43	LsulS	GholS
+subtree.43 <- drop.tip(tree, c("GeurS", "GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS"))
+
+#	44	LsulS	PbimS
+subtree.44 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS"))
+
+#	45	LsulS	XhelS
+subtree.45 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PbimS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS"))
+
+#	46	GsexS	GeurS
+subtree.46 <- drop.tip(tree, c("GholS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	47	GsexS	GholS
+subtree.47 <- drop.tip(tree, c("GeurS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	48	GsexS	PbimS
+subtree.48 <- drop.tip(tree, c("GholS", "GeurS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	49	GsexS	XhelS
+subtree.49 <- drop.tip(tree, c("GholS", "GeurS", "PbimS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	50	GeurS	GholS
+subtree.50 <- drop.tip(tree, c("GsexS", "PbimS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	51	GeurS	PbimS
+subtree.51 <- drop.tip(tree, c("GholS", "GsexS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	52	GeurS	XhelS
+subtree.52 <- drop.tip(tree, c("GholS", "GsexS", "PbimS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	53	GholS	PbimS
+subtree.53 <- drop.tip(tree, c("GeurS", "GsexS", "XhelS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	54	GholS	XhelS
+subtree.54 <- drop.tip(tree, c("GeurS", "GsexS", "PbimS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+#	55	PbimS	XhelS
+subtree.55 <- drop.tip(tree, c("GholS", "GeurS", "GsexS", "PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS"))
+
+```
+
+# 4. Running EVE
+
+## 4.1. Define background and foreground lineages
+
+```{r include=FALSE}
+foreground_11 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, TRUE, FALSE,
+                 FALSE, FALSE)
+
+foreground_12 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, TRUE, FALSE,
+                 FALSE, FALSE)
+
+foreground_13 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE,
+                 TRUE, FALSE)
+
+foreground_14 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE,
+                 FALSE, TRUE)
+
+foreground_15 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE,
+                 FALSE, FALSE)
+
+foreground_16 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE,
+                 FALSE, FALSE)
+
+foreground_17 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE,
+                 FALSE, FALSE)
+
+foreground_18 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_19 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_20 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_21 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE)
+
+foreground_22 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE)
+
+foreground_23 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_24 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_25 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_26 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_27 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_28 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE)
+
+foreground_29 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE)
+
+foreground_30 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_31 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_32 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_33 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_34 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_35 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, TRUE)
+
+foreground_36 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE)
+
+foreground_37 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE)
+
+foreground_38 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE)
+
+foreground_39 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE)
+
+foreground_40 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE)
+
+foreground_41 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE)
+
+foreground_42 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE)
+
+foreground_43 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE)
+
+foreground_44 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE)
+
+foreground_45 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE)
+
+foreground_46 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_47 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, TRUE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_48 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, TRUE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_49 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, TRUE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_50 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, TRUE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_51 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, TRUE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_52 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_53 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, TRUE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_54 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+
+foreground_55 <- c(FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, TRUE, FALSE, FALSE, 
+                 TRUE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE, FALSE, FALSE, FALSE, 
+                 FALSE, FALSE)
+```
+
+## 4.2. Specifying the species for the columns in the FPKM matrix
+
+```{r include=FALSE}
+# remove the trailing number so that we get a vector with the species for each column
+list.fpkm <- do.call("list", mget(grep("FPKM_", ls(), value=T)))
+col.Tips <- lapply(list.fpkm, function (x) sub("_.*$","",colnames(x)))
+
+names <- names(col.Tips)
+names2 <- sub("FPKM", "col.Tips", names)
+names(col.Tips) <- names2
+list2env(col.Tips,envir=.GlobalEnv)
+```
+
+## 4.3. Running twoThetaTest
+
+This runs EVE's twoThetaTest for each pair of sulfidic lineages
+
+```{r include=FALSE}
+res11 <- twoThetaTest(subtree.11, gene.data = FPKM_11, isTheta2edge = foreground_11, colSpecies = col.Tips_11, cores=23)
+res12 <- twoThetaTest(subtree.12, gene.data = FPKM_12, isTheta2edge = foreground_12, colSpecies = col.Tips_12, cores=23)
+res13 <- twoThetaTest(subtree.13, gene.data = FPKM_13, isTheta2edge = foreground_13, colSpecies = col.Tips_13, cores=23)
+res14 <- twoThetaTest(subtree.14, gene.data = FPKM_14, isTheta2edge = foreground_14, colSpecies = col.Tips_14, cores=23)
+res15 <- twoThetaTest(subtree.15, gene.data = FPKM_15, isTheta2edge = foreground_15, colSpecies = col.Tips_15, cores=23)
+res16 <- twoThetaTest(subtree.16, gene.data = FPKM_16, isTheta2edge = foreground_16, colSpecies = col.Tips_16, cores=23)
+res17 <- twoThetaTest(subtree.17, gene.data = FPKM_17, isTheta2edge = foreground_17, colSpecies = col.Tips_17, cores=23)
+res18 <- twoThetaTest(subtree.18, gene.data = FPKM_18, isTheta2edge = foreground_18, colSpecies = col.Tips_18, cores=23)
+res19 <- twoThetaTest(subtree.19, gene.data = FPKM_19, isTheta2edge = foreground_19, colSpecies = col.Tips_19, cores=23)
+res20 <- twoThetaTest(subtree.20, gene.data = FPKM_20, isTheta2edge = foreground_20, colSpecies = col.Tips_20, cores=23)
+res21 <- twoThetaTest(subtree.21, gene.data = FPKM_21, isTheta2edge = foreground_21, colSpecies = col.Tips_21, cores=23)
+res22 <- twoThetaTest(subtree.22, gene.data = FPKM_22, isTheta2edge = foreground_22, colSpecies = col.Tips_22, cores=23)
+res23 <- twoThetaTest(subtree.23, gene.data = FPKM_23, isTheta2edge = foreground_23, colSpecies = col.Tips_23, cores=23)
+res24 <- twoThetaTest(subtree.24, gene.data = FPKM_24, isTheta2edge = foreground_24, colSpecies = col.Tips_24, cores=23)
+res25 <- twoThetaTest(subtree.25, gene.data = FPKM_25, isTheta2edge = foreground_25, colSpecies = col.Tips_25, cores=23)
+res26 <- twoThetaTest(subtree.26, gene.data = FPKM_26, isTheta2edge = foreground_26, colSpecies = col.Tips_26, cores=23)
+res27 <- twoThetaTest(subtree.27, gene.data = FPKM_27, isTheta2edge = foreground_27, colSpecies = col.Tips_27, cores=23)
+res28 <- twoThetaTest(subtree.28, gene.data = FPKM_28, isTheta2edge = foreground_28, colSpecies = col.Tips_28, cores=23)
+res29 <- twoThetaTest(subtree.29, gene.data = FPKM_29, isTheta2edge = foreground_29, colSpecies = col.Tips_29, cores=23)
+res30 <- twoThetaTest(subtree.30, gene.data = FPKM_30, isTheta2edge = foreground_30, colSpecies = col.Tips_30, cores=23)
+res31 <- twoThetaTest(subtree.31, gene.data = FPKM_31, isTheta2edge = foreground_31, colSpecies = col.Tips_31, cores=23)
+res32 <- twoThetaTest(subtree.32, gene.data = FPKM_32, isTheta2edge = foreground_32, colSpecies = col.Tips_32, cores=23)
+res33 <- twoThetaTest(subtree.33, gene.data = FPKM_33, isTheta2edge = foreground_33, colSpecies = col.Tips_33, cores=23)
+res34 <- twoThetaTest(subtree.34, gene.data = FPKM_34, isTheta2edge = foreground_34, colSpecies = col.Tips_34, cores=23)
+res35 <- twoThetaTest(subtree.35, gene.data = FPKM_35, isTheta2edge = foreground_35, colSpecies = col.Tips_35, cores=23)
+res36 <- twoThetaTest(subtree.36, gene.data = FPKM_36, isTheta2edge = foreground_36, colSpecies = col.Tips_36, cores=23)
+res37 <- twoThetaTest(subtree.37, gene.data = FPKM_37, isTheta2edge = foreground_37, colSpecies = col.Tips_37, cores=23)
+res38 <- twoThetaTest(subtree.38, gene.data = FPKM_38, isTheta2edge = foreground_38, colSpecies = col.Tips_38, cores=23)
+res39 <- twoThetaTest(subtree.39, gene.data = FPKM_39, isTheta2edge = foreground_39, colSpecies = col.Tips_39, cores=23)
+res40 <- twoThetaTest(subtree.40, gene.data = FPKM_40, isTheta2edge = foreground_40, colSpecies = col.Tips_40, cores=23)
+res41 <- twoThetaTest(subtree.41, gene.data = FPKM_41, isTheta2edge = foreground_41, colSpecies = col.Tips_41, cores=23)
+res42 <- twoThetaTest(subtree.42, gene.data = FPKM_42, isTheta2edge = foreground_42, colSpecies = col.Tips_42, cores=23)
+res43 <- twoThetaTest(subtree.43, gene.data = FPKM_43, isTheta2edge = foreground_43, colSpecies = col.Tips_43, cores=23)
+res44 <- twoThetaTest(subtree.44, gene.data = FPKM_44, isTheta2edge = foreground_44, colSpecies = col.Tips_44, cores=23)
+res45 <- twoThetaTest(subtree.45, gene.data = FPKM_45, isTheta2edge = foreground_45, colSpecies = col.Tips_45, cores=23)
+res46 <- twoThetaTest(subtree.46, gene.data = FPKM_46, isTheta2edge = foreground_46, colSpecies = col.Tips_46, cores=23)
+res47 <- twoThetaTest(subtree.47, gene.data = FPKM_47, isTheta2edge = foreground_47, colSpecies = col.Tips_47, cores=23)
+res48 <- twoThetaTest(subtree.48, gene.data = FPKM_48, isTheta2edge = foreground_48, colSpecies = col.Tips_48, cores=23)
+res49 <- twoThetaTest(subtree.49, gene.data = FPKM_49, isTheta2edge = foreground_49, colSpecies = col.Tips_49, cores=23)
+res50 <- twoThetaTest(subtree.50, gene.data = FPKM_50, isTheta2edge = foreground_50, colSpecies = col.Tips_50, cores=23)
+res51 <- twoThetaTest(subtree.51, gene.data = FPKM_51, isTheta2edge = foreground_51, colSpecies = col.Tips_51, cores=23)
+res52 <- twoThetaTest(subtree.52, gene.data = FPKM_52, isTheta2edge = foreground_52, colSpecies = col.Tips_52, cores=23)
+res53 <- twoThetaTest(subtree.53, gene.data = FPKM_53, isTheta2edge = foreground_53, colSpecies = col.Tips_53, cores=23)
+res54 <- twoThetaTest(subtree.54, gene.data = FPKM_54, isTheta2edge = foreground_54, colSpecies = col.Tips_54, cores=23)
+res55 <- twoThetaTest(subtree.55, gene.data = FPKM_55, isTheta2edge = foreground_55, colSpecies = col.Tips_55, cores=23)
+```
+
+## 4.4. Aggregate results
+
+```{r}
+#Create list of all results
+final.res.list <- mget(ls(pattern="^res[0-9]+"))
+
+#Extract LRT values for all cases
+LRT <- data.frame(matrix(nrow = 5000, ncol = 0))
+for (i in 1:45) {
+  temp <- final.res.list[[i]]$LRT
+  LRT <- cbind(LRT,temp)
+}
+
+#Set negative LRT values to zero
+LRT[LRT < 0] <- 0
+
+#List of models and species
+final.models <- as.data.frame(t(do.call(cbind, mget(grep("m_", ls(), value=T)))))
+final.models <- tibble::rownames_to_column(final.models, "comparison")
+
+#List of model IDs
+model.names <- final.models$comparison
+
+#Add model names to LRT
+colnames(LRT) <- model.names
+
+#Calculate FDR
+FDR <- lapply(LRT[1:45], FDRcalc)
+gene.names <- row.names(FPKM_11)
+
+#Number of convergent genes
+conv.genes <- lapply(FDR, function (x) sum(x < 0.05, na.rm=TRUE))
+
+#Convert list to df and add variables
+final.results <- ldply (conv.genes, data.frame)
+final.results <- merge(final.models, final.results, by.x="comparison", by.y=".id")
+colnames(final.results) <- c("comparison", "spec1", "spec2", "conv.genes")
+#Create unique identifier
+final.results$combination <- paste(final.results$spec1, final.results$spec2)
+
+#Visualize results
+ggplot(final.results, aes(reorder(combination,conv.genes),conv.genes))+
+  geom_bar(stat="identity", position = position_dodge())+
+  coord_flip()+
+  theme_classic()
+```
+
+# 5. Generate predictor variables
+
+## 5.1. Calculate phylogenetic distances
+
+```{r}
+#Calculate phylogenetic distance matrix
+distance.matrix <- as.data.frame(cophenetic(tree))
+
+#Transform to long format
+distance.matrix.long <- dist2list(as.dist(t(distance.matrix)))
+colnames(distance.matrix.long) <- c("spec1", "spec2", "phylodist")
+
+#Create unique identifier
+distance.matrix.long$combination <- paste(distance.matrix.long$spec1, distance.matrix.long$spec2)
+
+#Append to EVE results
+final.results2 <- merge(final.results, distance.matrix.long, by="combination")
+```
+
+
+## 5.2. Calculate ecological dissimilarity
+
+### 5.2.1. Import water chemistry and location data
+
+```{r}
+#Water chemistry
+env.var <- read.csv("envpredictors.csv")
+```
+
+### 5.2.2. Download environmental data
+
+```{r}
+#Get world clim data
+rc <- getData("worldclim",var="bio",res=0.5, lon=-80, lat=21)
+
+#Get merge country boarders
+usa <- getData("GADM", country = "USA", level = 0)
+mex <- getData("GADM", country = "MEX", level = 0)
+dre <- getData("GADM", country = "DOM", level = 0)
+tilenames.usa <- tile_name(usa)
+tiles <- tile_get(tilenames.usa, "bio")
+merged.tiles <- tile_merge(tiles)
+
+#Crop to region
+r = raster(xmn=-100,xmx=-65,ymn=12,ymx=35)
+range <- crop(merged.tiles, r)
+
+#Isolate Lat/Long
+coords <-data.frame(x=env.var$long, y=env.var$lat)
+
+#Change to proper format
+points <- SpatialPoints(coords, proj4string = r@crs)
+
+#Extract point values (note, lots of NAs because this is fake data located in the ocean)
+values <- as.data.frame(raster::extract(range,points))
+
+#Append to your dataset
+env.var <- cbind(env.var,values)
+```
+
+
+# 6. Plots
+## 6.1. Correlation with phylogenetic distance
+```{r}
+#Remove single species runs
+final.results.twospec <- final.results2[ which(final.results2$model == "two species"), ]
+#final.results.twospec <- final.results.twospec[ which(final.results.twospec$spec1.x != "LsulS"), ]
+#final.results.twospec <- final.results.twospec[ which(final.results.twospec$spec2.x != "LsulS"), ]
+
+ggplot(final.results2, aes(phylodist, sqrt(conv.genes)))+
+  geom_point() +
+  geom_smooth(method = "lm")+
+  geom_text_repel(aes(label=combination))
+
+```
+
+## 6.2. Correlation with environmental distance
+
+```{r}
+#Climate
+allenv <-  env.var[c(2,5:28)]
+allenv2 <- allenv[,-1]
+rownames(allenv2) <- allenv[,1]
+allenv3 <- scale(allenv2)
+
+#Distance matrix
+allenv.dist <- dist(allenv3)
+allenv.dist.long <- dist2list(as.dist(t(allenv.dist)))
+colnames(allenv.dist.long) <- c("spec1", "spec2", "env.dist")
+allenv.dist.long$combination <- paste(allenv.dist.long$spec1, allenv.dist.long$spec2)
+
+final.results3 <- merge(final.results2, allenv.dist.long, by="combination")
+#final.results4 <- final.results4[c(1:6,9,12,15)]
+
+ggplot(final.results3, aes(env.dist, sqrt(conv.genes)))+
+  geom_point() +
+  geom_smooth(method = "lm")+
+  geom_text_repel(aes(label=combination))
+```
+
+# 7. Partial Mantel test
+
+```{r}
+final.results3 <- final.results3[order(final.results3$comparison),]
+final.results3$spec1 <- factor(final.results3$spec1, levels = c("PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS", 
+                                                                                    "GsexS", "GeurS", "GholS", "PbimS", "XhelS"))
+final.results3$spec2 <- factor(final.results3$spec2, levels = c("PmexPuyS", "PmexTacS", "PmexPichS", "PlatS", "LsulS", 
+                                                                                    "GsexS", "GeurS", "GholS", "PbimS", "XhelS"))
+#Extract individual variables
+gene.mat.l <- final.results3[c(9,10,5)]
+gene.mat.l$conv.genes <- scale(sqrt(gene.mat.l$conv.genes))
+phyl.mat.l <- final.results3[c(9,10,8)]
+phyl.mat.l$phylodist <- scale(phyl.mat.l$phylodist)
+envi.mat.l <- final.results3[c(9,10,11)]
+envi.mat.l$env.dist <- scale(envi.mat.l$env.dist)
+
+#Reconfigure distance matrices
+gene.mat <- as.dist(xtabs(gene.mat.l[, 3] ~ gene.mat.l[, 2] + gene.mat.l[, 1]))
+phyl.mat <- as.dist(xtabs(phyl.mat.l[, 3] ~ phyl.mat.l[, 2] + phyl.mat.l[, 1]))
+envi.mat <- as.dist(xtabs(envi.mat.l[, 3] ~ envi.mat.l[, 2] + envi.mat.l[, 1]))
+
+#VEGAN
+ecodist::mantel(gene.mat ~ envi.mat + phyl.mat, nperm=100000, nboot=500)
+ecodist::mantel(gene.mat ~ phyl.mat + envi.mat, nperm=100000, nboot=500)
+```
+
