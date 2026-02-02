@@ -3,7 +3,7 @@ title: "Predictors of Convergence"
 output: html_notebook
 ---
 
-# 1. Dependencies
+# 1. Dependencies 
 
 ## 1.1. Loading required packages
 
