@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+title: "Data and scripts for: Ecology drives the degree of convergence in the gene expression of extremophile fishes"
+message: "If you use this code, please cite the associated publication."
+type: software
+authors:
+  - family-names: Tobler
+    given-names: Michael
+    orcid: "0000-0002-0326-0890"
+  - family-names: Greenway
+    given-names: Ryan
+    orcid: "0000-0002-7182-7932"
+  - family-names: Kelley
+    given-names: Joanna
+    orcid: "0000-0002-7731-605X"
+version: 1.0.0
+date-released: 2026-08-13
+repository-code: "https://github.com/michitobler/degreesofconvergence"
+license: MIT
