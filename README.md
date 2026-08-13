@@ -9,4 +9,4 @@ Files for Tobler et al. (in prep): "Ecology drives the degree of convergence in 
 - [gene_annotations.csv](https://github.com/michitobler/degreesofconvergence/blob/main/gene_annotations.csv): Annotations of genes in our analysis based on a Blast to the human SwissProt database.
 
 ## Analytical pipeline
-- [PredictorsConvergencefinalrevisionClean.Rmd](https://github.com/michitobler/degreesofconvergence/blob/main/PredictorsConvergencefinalrevisionClean.Rmd): R Markdown script with including the reproducible code for all results included in the study
+- [PredictorsConvergenceFinalAnalysis.Rmd](https://github.com/michitobler/degreesofconvergence/blob/main/PredictorsConvergenceFinalAnalysis.Rmd): R Markdown script with including the reproducible code for all results included in the study
